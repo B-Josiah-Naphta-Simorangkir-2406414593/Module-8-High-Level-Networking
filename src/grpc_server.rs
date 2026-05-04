@@ -6,22 +6,18 @@ use tokio::sync::mpsc::{Receiver, Sender};
 pub mod services {
     tonic::include_proto!("services");
 }
+
 use services::{
     payment_service_server::{PaymentService, PaymentServiceServer},
-    PaymentRequest, PaymentResponse,
     transaction_service_server::{TransactionService, TransactionServiceServer},
+    chat_service_server::{ChatService, ChatServiceServer},
+    PaymentRequest, PaymentResponse,
     TransactionRequest, TransactionResponse,
-    chat_service_server::{ChatService, ChatServiceServer}, ChatMessage
+    ChatMessage,
 };
 
 #[derive(Default)]
 pub struct MyPaymentService {}
-
-#[derive(Default)]
-pub struct MyTransactionService {}
-
-#[derive(Default)]
-pub struct MyChatService {}
 
 #[tonic::async_trait]
 impl PaymentService for MyPaymentService {
@@ -31,11 +27,12 @@ impl PaymentService for MyPaymentService {
     ) -> Result<Response<PaymentResponse>, Status> {
         println!("Received payment request: {:?}", request);
 
-        // Process the request and return a response
-        // This example immediately returns a successful result for demonstration purposes
         Ok(Response::new(PaymentResponse { success: true }))
     }
 }
+
+#[derive(Default)]
+pub struct MyTransactionService {}
 
 #[tonic::async_trait]
 impl TransactionService for MyTransactionService {
@@ -46,19 +43,26 @@ impl TransactionService for MyTransactionService {
         request: Request<TransactionRequest>,
     ) -> Result<Response<Self::GetTransactionHistoryStream>, Status> {
         println!("Received transaction history request: {:?}", request);
-        let (tx, rx): (Sender<Result<TransactionResponse, Status>>, Receiver<Result<TransactionResponse, Status>>) = mpsc::channel(4);
+
+        let (tx, rx): (
+            Sender<Result<TransactionResponse, Status>>,
+            Receiver<Result<TransactionResponse, Status>>,
+        ) = mpsc::channel(4);
 
         tokio::spawn(async move {
-            for i in 0..30 { // Simulate sending 30 transaction records
+            for i in 0..30 {
                 if tx.send(Ok(TransactionResponse {
                     transaction_id: format!("trans_{}", i),
                     status: "Completed".to_string(),
                     amount: 100.0,
                     timestamp: "2022-01-01T12:00:00Z".to_string(),
-                })).await.is_err() {
+                }))
+                .await
+                .is_err()
+                {
                     break;
                 }
-                
+
                 if i % 10 == 9 {
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 }
@@ -68,6 +72,9 @@ impl TransactionService for MyTransactionService {
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }
+
+#[derive(Default)]
+pub struct MyChatService {}
 
 #[tonic::async_trait]
 impl ChatService for MyChatService {
@@ -81,14 +88,13 @@ impl ChatService for MyChatService {
         let (tx, rx) = mpsc::channel(10);
 
         tokio::spawn(async move {
-            while let Some(message) = stream.message().await.unwrap_or_else(|_| None) {
+            while let Some(message) = stream.message().await.unwrap_or(None) {
                 println!("Received message: {:?}", message);
+
                 let reply = ChatMessage {
                     user_id: message.user_id.clone(),
                     message: format!(
-                        "Terima kasih telah melakukan chat kepada CS virtual, \
-                        Pesan anda akan dibalas pada jam kerja. Pesan anda : {}", 
-                        message.message
+                        "Terima kasih telah melakukan chat kepada CS virtual, Pesan anda akan dibalas pada jam kerja."
                     ),
                 };
 
@@ -103,6 +109,7 @@ impl ChatService for MyChatService {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
+
     let payment_service = MyPaymentService::default();
     let transaction_service = MyTransactionService::default();
     let chat_service = MyChatService::default();
